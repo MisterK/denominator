@@ -1,0 +1,71 @@
+apply plugin: 'java'
+apply from: ('../dagger.gradle')
+
+repositories { mavenLocal()
+               mavenCentral()
+               maven { url 'https://oss.sonatype.org/content/repositories/releases/' }}
+
+dependencies {
+  compile     'com.netflix.denominator:denominator-core:4.4.0'
+  compile     'com.netflix.denominator:denominator-dynect:4.4.0'
+  compile     'com.netflix.denominator:denominator-ultradns:4.4.0'
+  compile     'com.netflix.denominator:denominator-route53:4.4.0'
+  compile     'com.netflix.denominator:denominator-clouddns:4.4.0'
+  compile     'com.netflix.denominator:denominator-designate:4.4.0'
+  compile     'com.netflix.feign:feign-core:7.3.0'
+  compile     'io.undertow:undertow-core:1.1.2.Final'
+  compile     'com.google.code.gson:gson:2.2.4'
+  compile     'org.jboss.logmanager:jboss-logmanager:1.5.4.Final'
+  testCompile 'junit:junit:4.12'
+  testCompile 'org.assertj:assertj-core:1.7.1'
+  testCompile 'com.netflix.feign:feign-gson:7.3.0'
+}
+
+// create a self-contained jar that is executable
+// the output is both a 'fat' project artifact and
+// a convenience file named "build/denominatord"
+task fatJar(dependsOn: classes, type: Jar) { 
+  classifier 'fat'
+
+  // until better groovy, hard-code the list, which must be updated
+  // when providers are added.
+  def providerFile = "META-INF/services/denominator.Provider"
+  from "supportedProviders.txt"
+  rename "supportedProviders.txt", providerFile
+
+  doFirst {
+    // Delay evaluation until the compile configuration is ready
+    from {
+      configurations.compile.collect { zipTree(it).matching { exclude "**/${providerFile}" } }
+    }
+  }
+
+  from (sourceSets*.output.classesDir) {
+    exclude "**/${providerFile}"
+  }
+
+  // really executable jar
+  // http://skife.org/java/unix/2011/06/20/really_executable_jars.html
+
+  manifest {
+    attributes 'Main-Class': 'denominator.denominatord.DenominatorD'
+  }
+
+  // for convenience, we make a file in the build dir named denominator with no extension
+  doLast {
+    def srcFile = new File("${buildDir}/libs/${archiveName}")
+    def shortcutFile = new File("${buildDir}/denominatord")
+    shortcutFile.delete()
+    shortcutFile << "#!/usr/bin/env sh\n"
+    shortcutFile << 'exec java -jar $0 "$@"' + "\n"
+    shortcutFile << srcFile.bytes
+    shortcutFile.setExecutable(true, true)
+    srcFile.delete()
+    srcFile << shortcutFile.bytes   
+    srcFile.setExecutable(true, true)
+  }
+}
+
+artifacts {
+  archives fatJar
+}
